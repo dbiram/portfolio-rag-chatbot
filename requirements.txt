@@ -1,0 +1,8 @@
+fastapi==0.104.1
+uvicorn==0.24.0
+httpx==0.25.2
+pydantic
+pydantic-settings
+python-dotenv==1.0.0
+faiss-cpu
+pytest==7.4.3

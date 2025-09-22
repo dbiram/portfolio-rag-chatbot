@@ -41,12 +41,29 @@ class RetrievalService:
             query_embeddings = await self.mistral_client.embed([query])
             query_embedding = query_embeddings[0]
             
-            # Search for similar chunks
-            results = self.vector_store.search(query_embedding, k=top_k)
+            # Search for similar chunks (get more than needed to allow for re-ranking)
+            search_k = min(top_k * 3, self.vector_store.index.ntotal)
+            results = self.vector_store.search(query_embedding, k=search_k)
             
-            logger.info(f"Retrieved {len(results)} chunks with similarities: {[f'{score:.3f}' for _, score in results]}")
+            # Apply source-based boosting
+            boosted_results = []
+            for chunk_data, similarity_score in results:
+                source = chunk_data.get('source', '')
+                boost_factor = settings.source_priority_boost.get(source, 1.0)
+                boosted_score = similarity_score * boost_factor
+                boosted_results.append((chunk_data, boosted_score))
+                
+                logger.debug(f"Chunk '{chunk_data.get('title', 'Untitled')}' from {source}: "
+                           f"original={similarity_score:.3f}, boosted={boosted_score:.3f} (boost={boost_factor})")
             
-            return results
+            # Re-sort by boosted scores and take top_k
+            boosted_results.sort(key=lambda x: x[1], reverse=True)
+            final_results = boosted_results[:top_k]
+            
+            logger.info(f"Retrieved {len(final_results)} chunks with boosted similarities: "
+                       f"{[f'{score:.3f}' for _, score in final_results]}")
+            
+            return final_results
             
         except Exception as e:
             logger.error(f"Error during chunk retrieval: {e}")
